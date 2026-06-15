@@ -7,7 +7,6 @@ AI 초안 생성은 content-api(FastAPI)가 담당. 블로그는 읽기 전용.
 ## 빌드 명령어
 
 ```bash
-cd policy-blog
 npm install
 npm run dev          # 개발 서버 (포트 3001)
 npx tsc --noEmit     # 타입 체크
@@ -44,6 +43,7 @@ src/app/
   api/admin/drafts/route.ts       → GET 목록 / PATCH 상태변경
   sitemap.ts                      → 동적 사이트맵 (published 글 전체)
   robots.ts                       → robots.txt
+src/middleware.ts                 → /admin, /api/admin/* 프로덕션 차단 (NODE_ENV=production → 404)
 ```
 
 ## 핵심 라이브러리 (src/lib/)
@@ -89,7 +89,8 @@ view_count, _generation_meta{}
 content-api → MongoDB(draft) → /admin 검수 탭 → 발행
 ```
 
-- `/admin` → ADMIN_SECRET 입력
+- **로컬 전용** — 프로덕션(Vercel)에서 `/admin`은 미들웨어가 404 반환
+- 로컬 `npm run dev` → `http://localhost:3001/admin` → ADMIN_SECRET 입력
 - "검수" 탭: draft → review → published 상태 전환
 - "초안 생성" 탭: content-api(localhost:8000) 호출 → 생성 상태 폴링
 
@@ -110,3 +111,4 @@ ADMIN_SECRET=
 - `getDb()` 싱글톤 사용
 - AdSense slot ID는 컴포넌트에 하드코딩 허용
 - 검수 없는 발행 금지 — status=published는 반드시 사람이 Admin에서 직접 변경
+- Admin은 로컬 전용 — `src/middleware.ts`가 프로덕션에서 /admin 전체 차단
