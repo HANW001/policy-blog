@@ -21,6 +21,21 @@ export interface PolicyArticle {
   updated_at: string
   status: "draft" | "review" | "published"
   view_count: number
+  // content-api Pass 4 / Level 1 검수 필드 (선택 — 구 문서에는 없을 수 있음)
+  review_report?: string
+  validation?: { passed: boolean; issues: string[] }
+  article_type?: "info" | "experience"
+  // Admin 검수자가 승인/반려 시 기록
+  review_meta?: {
+    human_action: "approved" | "rejected"
+    rejected_reason?: string
+    reviewed_at: string
+  }
+  // Level 2 예약 발행 큐 (기능 플래그 활성화 시에만 사용)
+  scheduled_publish_at?: string
+  // 필러/클러스터 구조 (content-api 클러스터 A·B부터 사용 — 구 문서에는 없을 수 있음)
+  article_role?: "pillar" | "cluster"
+  pillar_slug?: string
 }
 
 export async function getArticles(options?: {
@@ -71,6 +86,20 @@ export async function getArticlesByCluster(cluster: string, excludeSlug: string)
       .collection("policy_articles")
       .find({ cluster, status: "published", slug: { $ne: excludeSlug } })
       .limit(5)
+      .toArray() as unknown as PolicyArticle[]
+  } catch {
+    return []
+  }
+}
+
+export async function getArticlesByPillar(pillarSlug: string, excludeSlug: string): Promise<PolicyArticle[]> {
+  try {
+    const db = await getDb()
+    return db
+      .collection("policy_articles")
+      .find({ pillar_slug: pillarSlug, status: "published", slug: { $ne: excludeSlug } })
+      .sort({ published_at: -1 })
+      .limit(15)
       .toArray() as unknown as PolicyArticle[]
   } catch {
     return []

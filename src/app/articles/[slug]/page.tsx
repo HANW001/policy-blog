@@ -1,13 +1,16 @@
 import { notFound } from "next/navigation"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { getArticleBySlug, getArticlesByCluster, getAllPublishedSlugs, CATEGORY_LABELS } from "@/lib/articles"
+import { getArticleBySlug, getArticlesByCluster, getArticlesByPillar, getAllPublishedSlugs, CATEGORY_LABELS } from "@/lib/articles"
 import JsonLd from "@/components/JsonLd"
 import KeyFacts from "@/components/KeyFacts"
+import TldrBox from "@/components/TldrBox"
 import FaqSection from "@/components/FaqSection"
 import ClusterNav from "@/components/ClusterNav"
+import PillarChildren from "@/components/PillarChildren"
 import Breadcrumb from "@/components/Breadcrumb"
 import AdUnit from "@/components/AdUnit"
+import { AUTHOR, REVIEWER } from "@/lib/author"
 import type { Metadata } from "next"
 
 export const revalidate = 86400
@@ -48,10 +51,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function ArticlePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const [article, clusterArticles] = await Promise.all([
+  const [article, clusterArticles, pillarChildren] = await Promise.all([
     getArticleBySlug(slug),
     getArticleBySlug(slug).then((a) =>
       a ? getArticlesByCluster(a.cluster, slug) : []
+    ),
+    getArticleBySlug(slug).then((a) =>
+      a?.article_role === "pillar" ? getArticlesByPillar(a.slug, slug) : []
     ),
   ])
 
@@ -73,9 +79,18 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
     url: articleUrl,
     mainEntityOfPage: { "@type": "WebPage", "@id": articleUrl },
     image: { "@type": "ImageObject", url: ogImageUrl },
-    author: { "@type": "Organization", name: "정책정보", url: siteUrl },
+    author: { "@type": "Person", name: AUTHOR.name, description: AUTHOR.description, url: `${siteUrl}/about` },
     publisher: { "@type": "Organization", name: "정책정보", url: siteUrl },
     keywords: CATEGORY_LABELS[article.category],
+    ...(article.review_meta?.human_action === "approved"
+      ? {
+          reviewedBy: {
+            "@type": "Person",
+            name: REVIEWER.name,
+            description: REVIEWER.description,
+          },
+        }
+      : {}),
   }
 
   const faqJsonLd = article.faq_items?.length > 0 ? {
@@ -122,11 +137,25 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
               공식 출처 확인
             </a>
           </p>
+          <p className="mt-1 text-sm text-gray-500">
+            글쓴이{" "}
+            <a href="/about" className="text-blue-700 hover:underline">
+              {AUTHOR.name}
+            </a>
+          </p>
+          {article.review_meta?.human_action === "approved" && (
+            <p className="mt-1 text-sm text-gray-500">
+              검토: {REVIEWER.name} ·{" "}
+              {new Date(article.review_meta.reviewed_at).toLocaleDateString("ko-KR")}
+            </p>
+          )}
         </header>
 
         <AdUnit slot="SLOT_TOP" />
 
         <KeyFacts facts={article.key_facts ?? {}} />
+
+        <TldrBox summary={article.summary} />
 
         <div className="prose prose-sm max-w-none mt-6 text-gray-800">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{article.content}</ReactMarkdown>
@@ -135,6 +164,8 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
         <AdUnit slot="SLOT_MID" />
 
         <FaqSection items={article.faq_items ?? []} />
+
+        <PillarChildren articles={pillarChildren} />
 
         <ClusterNav articles={clusterArticles} />
 

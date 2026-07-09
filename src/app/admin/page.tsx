@@ -1,5 +1,9 @@
 "use client"
 import { useEffect, useState, useCallback } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import { LEVEL2_ENABLED } from "@/lib/featureFlags"
+import { REVIEW_CHECKLIST } from "@/lib/reviewChecklist"
 
 const FASTAPI_URL = process.env.NEXT_PUBLIC_FASTAPI_URL ?? "http://localhost:8000"
 
@@ -28,6 +32,15 @@ interface GenerationMeta {
   pass2_issues: string[]
   pass2_approved: boolean
 }
+interface Validation {
+  passed: boolean
+  issues: string[]
+}
+interface ReviewMeta {
+  human_action: "approved" | "rejected"
+  rejected_reason?: string
+  reviewed_at: string
+}
 interface Article {
   slug: string
   title: string
@@ -36,6 +49,17 @@ interface Article {
   summary: string
   updated_at: string
   _generation_meta?: GenerationMeta
+  review_report?: string
+  validation?: Validation
+  article_type?: "info" | "experience"
+  review_meta?: ReviewMeta
+  scheduled_publish_at?: string
+}
+interface Stats {
+  reviewedCount: number
+  rejectedCount: number
+  rejectionRate: number
+  level2Eligible: boolean
 }
 interface Config {
   slug: string
@@ -91,6 +115,36 @@ function LoginScreen({
   )
 }
 
+// ── 반려율 통계 패널 ──────────────────────────────────────
+// Level 2 전환 조건: 애드센스 승인 완료 AND 반려율 10% 미만 (수동 판단, 여기선 데이터만 표시)
+function StatsPanel({ secret }: { secret: string }) {
+  const [stats, setStats] = useState<Stats | null>(null)
+
+  useEffect(() => {
+    fetch("/api/admin/stats", { headers: { "x-admin-secret": secret } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setStats)
+      .catch(() => {})
+  }, [secret])
+
+  if (!stats) return null
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
+      <span className="text-gray-500">
+        검수 이력 {stats.reviewedCount}건 중 반려 {stats.rejectedCount}건
+      </span>
+      <span className={`font-semibold ${stats.level2Eligible ? "text-green-600" : "text-gray-700"}`}>
+        반려율 {(stats.rejectionRate * 100).toFixed(1)}%
+      </span>
+      <span className="text-xs text-gray-400">
+        Level 2 전환 조건: 애드센스 승인 완료 AND 반려율 10% 미만
+        {stats.level2Eligible ? " — 반려율 조건 충족" : ""}
+      </span>
+    </div>
+  )
+}
+
 // ── 검수 탭 ──────────────────────────────────────────────
 function ReviewTab({ secret }: { secret: string }) {
   const [articles, setArticles] = useState<Article[]>([])
@@ -99,6 +153,10 @@ function ReviewTab({ secret }: { secret: string }) {
   const [message, setMessage] = useState("")
   const [fixingSlugs, setFixingSlugs] = useState<Set<string>>(new Set())
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
+  const [checklist, setChecklist] = useState<Record<string, boolean[]>>({})
+  const [rejectingSlug, setRejectingSlug] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
+  const [expandedReport, setExpandedReport] = useState<Set<string>>(new Set())
 
   const fetchArticles = useCallback(async () => {
     setLoading(true)
@@ -110,6 +168,66 @@ function ReviewTab({ secret }: { secret: string }) {
   }, [filter, secret])
 
   useEffect(() => { fetchArticles() }, [fetchArticles])
+
+  const toggleChecklistItem = (slug: string, index: number) => {
+    setChecklist((prev) => {
+      const current = prev[slug] ?? new Array(REVIEW_CHECKLIST.length).fill(false)
+      const next = [...current]
+      next[index] = !next[index]
+      return { ...prev, [slug]: next }
+    })
+  }
+
+  const toggleReport = (slug: string) => {
+    setExpandedReport((prev) => {
+      const s = new Set(prev)
+      if (s.has(slug)) s.delete(slug)
+      else s.add(slug)
+      return s
+    })
+  }
+
+  const submitReview = async (slug: string, action: "approved" | "rejected", reason?: string) => {
+    const res = await fetch("/api/admin/drafts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+      body: JSON.stringify({ slug, review_action: action, ...(reason ? { rejected_reason: reason } : {}) }),
+    })
+    if (res.ok) {
+      setMessage(`${slug} → ${action === "approved" ? "승인" : "반려"} 기록됨`)
+      setRejectingSlug(null)
+      setRejectReason("")
+      fetchArticles()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      setMessage(data.error ?? `${slug} 검수 기록 실패`)
+    }
+  }
+
+  const schedulePublish = async (slug: string) => {
+    const in48h = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+    const res = await fetch("/api/admin/drafts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+      body: JSON.stringify({ slug, scheduled_publish_at: in48h }),
+    })
+    if (res.ok) {
+      setMessage(`${slug} → 48시간 후 예약 발행 등록`)
+      fetchArticles()
+    }
+  }
+
+  const cancelSchedule = async (slug: string) => {
+    const res = await fetch("/api/admin/drafts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+      body: JSON.stringify({ slug, scheduled_publish_at: null }),
+    })
+    if (res.ok) {
+      setMessage(`${slug} 예약 발행 회수됨`)
+      fetchArticles()
+    }
+  }
 
   const fixArticle = async (slug: string) => {
     setFixingSlugs((prev) => new Set(prev).add(slug))
@@ -165,9 +283,43 @@ function ReviewTab({ secret }: { secret: string }) {
   }
 
   const filtered = filter === "all" ? articles : articles.filter((a) => a.status === filter)
+  const scheduled = articles.filter((a) => a.scheduled_publish_at)
 
   return (
     <div>
+      <StatsPanel secret={secret} />
+
+      {LEVEL2_ENABLED && (
+        <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50 p-4">
+          <h3 className="text-sm font-bold text-purple-800 mb-2">
+            Level 2 — 예약 발행 큐 ({scheduled.length}건)
+          </h3>
+          {scheduled.length === 0 ? (
+            <p className="text-xs text-purple-600">예약된 글이 없습니다.</p>
+          ) : (
+            <ul className="space-y-2">
+              {scheduled.map((a) => (
+                <li key={a.slug} className="flex items-center justify-between text-sm bg-white rounded px-3 py-2">
+                  <span>
+                    {a.title} — {a.scheduled_publish_at && new Date(a.scheduled_publish_at).toLocaleString("ko-KR")} 발행 예정
+                  </span>
+                  <button
+                    onClick={() => cancelSchedule(a.slug)}
+                    className="text-xs text-red-600 border border-red-300 px-2 py-1 rounded hover:bg-red-50"
+                  >
+                    회수
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-xs text-purple-500 mt-2">
+            {/* 실제 발행 트리거(cron 등)는 이 범위 밖 — 큐 등록/회수 UI와 데이터 필드까지만 구현됨 */}
+            등록/회수만 지원하며 자동 발행 트리거는 별도 구현이 필요합니다.
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-4">
         <div className="flex gap-2 text-sm">
           {["all", "draft", "review", "published"].map((s) => (
@@ -231,6 +383,21 @@ function ReviewTab({ secret }: { secret: string }) {
                       {STATUS_LABELS[a.status]}
                     </span>
                     <span className="text-xs text-gray-400">{a.category}</span>
+                    {a.article_type && (
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                        {a.article_type === "experience" ? "경험형" : "정보형"}
+                      </span>
+                    )}
+                    {a.validation && !a.validation.passed && (
+                      <span className="text-xs bg-red-600 text-white px-2 py-0.5 rounded font-medium">
+                        ⛔ 검증 실패
+                      </span>
+                    )}
+                    {a.review_meta && (
+                      <span className={`text-xs px-2 py-0.5 rounded ${a.review_meta.human_action === "approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                        {a.review_meta.human_action === "approved" ? "승인됨" : `반려됨${a.review_meta.rejected_reason ? `: ${a.review_meta.rejected_reason}` : ""}`}
+                      </span>
+                    )}
                     {(a._generation_meta?.pass2_issues?.length ?? 0) > 0 && (
                       <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">
                         ⚠ 팩트체크 이슈 {a._generation_meta!.pass2_issues.length}건
@@ -245,6 +412,65 @@ function ReviewTab({ secret }: { secret: string }) {
                         <li key={i}>• {issue}</li>
                       ))}
                     </ul>
+                  )}
+                  {a.validation && a.validation.issues.length > 0 && (
+                    <ul className="mt-2 text-xs text-red-600 space-y-1">
+                      {a.validation.issues.map((issue, i) => (
+                        <li key={`v-${i}`}>• [기계검증] {issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {a.review_report && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() => toggleReport(a.slug)}
+                        className="text-xs text-blue-700 hover:underline"
+                      >
+                        {expandedReport.has(a.slug) ? "AI 검수 리포트 접기 ▲" : "AI 검수 리포트 보기 ▼"}
+                      </button>
+                      {expandedReport.has(a.slug) && (
+                        <div className="mt-2 prose prose-sm max-w-none bg-gray-50 border border-gray-200 rounded p-3 text-gray-700">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.review_report}</ReactMarkdown>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1">
+                    {REVIEW_CHECKLIST.map((item, i) => (
+                      <label key={i} className="flex items-center gap-1.5 text-xs text-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={checklist[a.slug]?.[i] ?? false}
+                          onChange={() => toggleChecklistItem(a.slug, i)}
+                        />
+                        {item}
+                      </label>
+                    ))}
+                  </div>
+                  {rejectingSlug === a.slug && (
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="반려 사유 입력"
+                        className="flex-1 border rounded px-2 py-1 text-xs"
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && submitReview(a.slug, "rejected", rejectReason)}
+                      />
+                      <button
+                        onClick={() => submitReview(a.slug, "rejected", rejectReason)}
+                        className="text-xs bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                      >
+                        반려 확정
+                      </button>
+                      <button
+                        onClick={() => { setRejectingSlug(null); setRejectReason("") }}
+                        className="text-xs text-gray-500 px-2 py-1"
+                      >
+                        취소
+                      </button>
+                    </div>
                   )}
                   <p className="text-xs text-gray-400 mt-2">
                     업데이트: {new Date(a.updated_at).toLocaleString("ko-KR")}
@@ -269,8 +495,30 @@ function ReviewTab({ secret }: { secret: string }) {
                     </button>
                   )}
                   <button
+                    onClick={() => submitReview(a.slug, "approved")}
+                    className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+                  >
+                    승인 기록
+                  </button>
+                  <button
+                    onClick={() => { setRejectingSlug(a.slug); setRejectReason("") }}
+                    className="text-xs bg-white text-red-600 border border-red-300 px-3 py-1 rounded hover:bg-red-50"
+                  >
+                    반려 기록
+                  </button>
+                  {LEVEL2_ENABLED && a.article_type === "info" && a.validation?.passed && !a.scheduled_publish_at && a.status !== "published" && (
+                    <button
+                      onClick={() => schedulePublish(a.slug)}
+                      className="text-xs bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700"
+                    >
+                      48시간 후 예약 발행
+                    </button>
+                  )}
+                  <button
                     onClick={() => changeStatus(a.slug, STATUS_NEXT[a.status])}
-                    className="text-xs bg-blue-700 text-white px-3 py-1 rounded hover:bg-blue-800"
+                    disabled={STATUS_NEXT[a.status] === "published" && a.validation?.passed === false}
+                    title={STATUS_NEXT[a.status] === "published" && a.validation?.passed === false ? "기계 검증 실패 — 발행 불가" : undefined}
+                    className="text-xs bg-blue-700 text-white px-3 py-1 rounded hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {STATUS_NEXT_LABEL[a.status]}
                   </button>

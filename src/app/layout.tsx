@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   },
   description: "정부 제도, 지원금, 행정 정보를 쉽고 정확하게 안내합니다.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://example.com"),
+  alternates: {
+    types: { "application/rss+xml": "/feed.xml" },
+  },
 }
 
 const navLinks = [
@@ -18,6 +21,7 @@ const navLinks = [
   { href: "/category/청년_주거", label: "청년·주거" },
   { href: "/category/세금_행정", label: "세금·행정" },
   { href: "/category/복지", label: "복지" },
+  { href: "/tools", label: "계산기" },
 ]
 
 const websiteJsonLd = {

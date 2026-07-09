@@ -40,7 +40,8 @@ src/app/
   disclaimer/page.tsx             → 면책고지
   admin/page.tsx                  → 초안 검수·발행 Admin UI (Client Component)
   admin/preview/[slug]/page.tsx   → Admin 미리보기 (Server Component, 발행 전 글 포함)
-  api/admin/drafts/route.ts       → GET 목록 / PATCH 상태변경
+  api/admin/drafts/route.ts       → GET 목록 / PATCH 상태변경·승인/반려·예약발행 (검증 실패 글 발행은 서버에서 400 차단)
+  api/admin/stats/route.ts        → GET 반려율 집계 (reviewedCount, rejectedCount, rejectionRate, level2Eligible)
   sitemap.ts                      → 동적 사이트맵 (published 글 전체)
   robots.ts                       → robots.txt
 src/middleware.ts                 → /admin, /api/admin/* 프로덕션 차단 (NODE_ENV=production → 404)
@@ -49,8 +50,11 @@ src/middleware.ts                 → /admin, /api/admin/* 프로덕션 차단 (
 ## 핵심 라이브러리 (src/lib/)
 
 ```
-articles.ts   → DB 쿼리 함수 + PolicyArticle 인터페이스
-mongodb.ts    → MongoDB 연결 싱글톤 (getDb() → policy_db)
+articles.ts        → DB 쿼리 함수 + PolicyArticle 인터페이스
+mongodb.ts         → MongoDB 연결 싱글톤 (getDb() → policy_db)
+author.ts          → 저자 닉네임·이력 단일 관리 (현재 [TODO] 플레이스홀더 — 바이라인·JSON-LD에서 사용)
+featureFlags.ts    → LEVEL2_ENABLED (NEXT_PUBLIC_LEVEL2_ENABLED === "true", 기본 false)
+reviewChecklist.ts → 검수 체크리스트 6항목 상수 (docs/검수-체크리스트.md와 동일)
 ```
 
 주요 함수: `getArticles`, `getArticleBySlug`, `getArticleBySlugAdmin`,
@@ -78,8 +82,15 @@ mongodb.ts    → MongoDB 연결 싱글톤 (getDb() → policy_db)
 slug, title, category, cluster, content(markdown),
 summary, faq_items[], key_facts{}, source_url,
 published_at, updated_at, status(draft|review|published),
-view_count, _generation_meta{}
+view_count, _generation_meta{},
+article_type("info"|"experience"),        ← content-api가 personal_notes 유무로 설정
+review_report(markdown),                  ← Pass 4 AI 검수 리포트
+validation{passed, issues[]},             ← 기계 검증 결과. passed=false면 발행 불가
+review_meta{human_action, rejected_reason?, reviewed_at},  ← admin 승인/반려 기록
+scheduled_publish_at                      ← Level 2 예약 발행 시각 (회수 시 null)
 ```
+
+`article_type`/`review_report`/`validation`은 content-api가 쓰고, `review_meta`/`scheduled_publish_at`은 admin API가 쓴다. 필드명은 content-api/CLAUDE.md의 계약 표와 고정 동기화.
 
 카테고리: `소득_지원` | `청년_주거` | `세금_행정` | `복지`
 
@@ -91,8 +102,12 @@ content-api → MongoDB(draft) → /admin 검수 탭 → 발행
 
 - **로컬 전용** — 프로덕션(Vercel)에서 `/admin`은 미들웨어가 404 반환
 - 로컬 `npm run dev` → `http://localhost:3001/admin` → ADMIN_SECRET 입력
-- "검수" 탭: draft → review → published 상태 전환
+- "검수" 탭 (Level 1): AI 검수 리포트(review_report)·기계 검증 이슈 표시 + 체크리스트 6항목 + 승인/반려(사유 입력 → review_meta 저장) + draft → review → published 상태 전환
+- `validation.passed=false` 글은 "검증 실패" 배지 + 발행 버튼 비활성화 + **서버 사이드에서도 발행 차단(400)**
+- 상단 StatsPanel: 반려율 % 표시 — Level 2 전환 조건(애드센스 승인 + 반려율 10% 미만)
+- Level 2 (LEVEL2_ENABLED=true일 때만): 정보형(article_type=info)·검증 통과 글에 "48시간 후 예약 발행" 버튼 + 예약 큐 패널(회수 가능). 실제 발행 cron 트리거는 미구현
 - "초안 생성" 탭: content-api(localhost:8000) 호출 → 생성 상태 폴링
+- 검수 절차 상세: `docs/검수-체크리스트.md` 참조
 
 ## 환경변수 (.env.local)
 
@@ -102,6 +117,7 @@ NEXT_PUBLIC_ADSENSE_ID=
 NEXT_PUBLIC_SITE_URL=
 NEXT_PUBLIC_FASTAPI_URL=http://localhost:8000
 ADMIN_SECRET=
+NEXT_PUBLIC_LEVEL2_ENABLED=      # "true"일 때만 Level 2 예약 발행 UI 활성화 (기본 미설정=off)
 ```
 
 ## 절대 규칙
