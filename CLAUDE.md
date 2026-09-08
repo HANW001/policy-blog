@@ -18,11 +18,25 @@ npm run build        # 프로덕션 빌드
 | 역할 | 기술 |
 |------|------|
 | 프레임워크 | Next.js 16 App Router (Server Components 기본) |
-| 배포 | Vercel |
+| 배포 | 오라클 클라우드 (`policynote.io.kr`, Ubuntu VM, nginx + systemd + certbot — `deploy/README-DEPLOY.md` 참고) |
 | DB | MongoDB Atlas — `policy_db`, `policy_articles` 컬렉션 |
-| 스타일 | Tailwind CSS 4 |
+| 스타일 | Tailwind CSS 4 + `@tailwindcss/typography` |
+| 폰트 | Pretendard (`next/font/local`, `pretendard` npm 패키지) |
 | 광고 | Google AdSense |
 | 타입 | TypeScript strict |
+
+## 배포 파일 (deploy/)
+
+```
+deploy/
+  README-DEPLOY.md            → 오라클 클라우드 배포 단계별 가이드
+  setup.sh                     → 인스턴스 초기 설정 스크립트 (Node.js/nginx/certbot 설치, clone+build, systemd·nginx 등록)
+  policy-blog.service          → systemd 유닛 (`next start -p 3001`)
+  nginx.conf                   → nginx 리버스 프록시 설정 (80→443)
+  publish-scheduled.service/.timer → 15분마다 예약 발행(scheduled_publish_at) 시각 도래 글을 published로 전환 (Level 2 트리거)
+```
+
+quant-family(`quant-family/deploy/`)의 검증된 구성을 이식한 것. 자세한 내용은 `deploy/README-DEPLOY.md` 참조.
 
 ## 라우트 구조
 
@@ -31,7 +45,7 @@ src/app/
   page.tsx                        → 홈 (최신글 + 카테고리별 추천)
   articles/
     page.tsx                      → 전체 글 목록 + ?q= 검색 (revalidate: 3600)
-    [slug]/page.tsx               → 글 상세 (Article+FAQPage+BreadcrumbList JSON-LD)
+    [slug]/page.tsx               → 글 상세 (Article+FAQPage+BreadcrumbList JSON-LD, 본문에 번호목록/Step 문단/H2 형태 절차가 있으면 HowTo JSON-LD 자동 추출)
     [slug]/opengraph-image.tsx    → OG 이미지 자동 생성
   category/[slug]/page.tsx        → 카테고리 글 목록 (revalidate: 3600)
   about/page.tsx                  → 저자/사이트 소개 (E-E-A-T 신호)
@@ -40,11 +54,13 @@ src/app/
   disclaimer/page.tsx             → 면책고지
   admin/page.tsx                  → 초안 검수·발행 Admin UI (Client Component)
   admin/preview/[slug]/page.tsx   → Admin 미리보기 (Server Component, 발행 전 글 포함)
-  api/admin/drafts/route.ts       → GET 목록 / PATCH 상태변경·승인/반려·예약발행 (검증 실패 글 발행은 서버에서 400 차단)
+  api/admin/drafts/route.ts       → GET 목록(cluster 포함 projection) / PATCH 상태변경·승인/반려·예약발행 (검증 실패 글 발행은 서버에서 400 차단)
   api/admin/stats/route.ts        → GET 반려율 집계 (reviewedCount, rejectedCount, rejectionRate, level2Eligible)
   sitemap.ts                      → 동적 사이트맵 (published 글 전체)
-  robots.ts                       → robots.txt
+  robots.ts                       → robots.txt (AI 크롤러 GPTBot·ClaudeBot 등 명시적 허용)
+  llms.txt/route.ts               → GEO용 llms.txt 매니페스트 (llmstxt.org 관례, AI 크롤러가 사이트 구조 파악용)
 src/middleware.ts                 → /admin, /api/admin/* 프로덕션 차단 (NODE_ENV=production → 404)
+public/ads.txt                    → Google AdSense 사이트 소유권 확인용 (google.com, pub-<id>, DIRECT, f08c47fec0942fa0)
 ```
 
 ## 핵심 라이브러리 (src/lib/)
@@ -52,7 +68,7 @@ src/middleware.ts                 → /admin, /api/admin/* 프로덕션 차단 (
 ```
 articles.ts        → DB 쿼리 함수 + PolicyArticle 인터페이스
 mongodb.ts         → MongoDB 연결 싱글톤 (getDb() → policy_db)
-author.ts          → 저자 닉네임·이력 단일 관리 (현재 [TODO] 플레이스홀더 — 바이라인·JSON-LD에서 사용)
+author.ts          → 저자·감수자 닉네임·이력 단일 관리(AUTHOR/REVIEWER). 바이라인은 글 하단에 작게 표시, JSON-LD author/reviewedBy는 그대로 유지
 featureFlags.ts    → LEVEL2_ENABLED (NEXT_PUBLIC_LEVEL2_ENABLED === "true", 기본 false)
 reviewChecklist.ts → 검수 체크리스트 6항목 상수 (docs/검수-체크리스트.md와 동일)
 ```
@@ -72,7 +88,8 @@ reviewChecklist.ts → 검수 체크리스트 6항목 상수 (docs/검수-체크
 | `FaqSection` | FAQ 아코디언 (FAQPage JSON-LD 연동) |
 | `JsonLd` | `<script type="application/ld+json">` 삽입 |
 | `AdUnit` | AdSense 광고 유닛 (slot: SLOT_TOP / SLOT_MID / SLOT_BOTTOM) |
-| `KeyFacts` | 핵심 정보 하이라이트 박스 (지원금액·기간 강조) |
+| `KeyFacts` | 핵심 정보 표(지원금액·기간 등, 테두리 중심 미니멀 스타일) |
+| `TldrBox` | "한눈에 보기" 요약 박스 (인용구 스타일) |
 | `ClusterNav` | 같은 클러스터 글 내부 링크 |
 | `Breadcrumb` | BreadcrumbList JSON-LD + UI |
 
@@ -100,12 +117,13 @@ scheduled_publish_at                      ← Level 2 예약 발행 시각 (회�
 content-api → MongoDB(draft) → /admin 검수 탭 → 발행
 ```
 
-- **로컬 전용** — 프로덕션(Vercel)에서 `/admin`은 미들웨어가 404 반환
+- **로컬 전용** — 프로덕션(오라클)에서 `/admin`은 미들웨어가 404 반환
 - 로컬 `npm run dev` → `http://localhost:3001/admin` → ADMIN_SECRET 입력
 - "검수" 탭 (Level 1): AI 검수 리포트(review_report)·기계 검증 이슈 표시 + 체크리스트 6항목 + 승인/반려(사유 입력 → review_meta 저장) + draft → review → published 상태 전환
 - `validation.passed=false` 글은 "검증 실패" 배지 + 발행 버튼 비활성화 + **서버 사이드에서도 발행 차단(400)**
 - 상단 StatsPanel: 반려율 % 표시 — Level 2 전환 조건(애드센스 승인 + 반려율 10% 미만)
-- Level 2 (LEVEL2_ENABLED=true일 때만): 정보형(article_type=info)·검증 통과 글에 "48시간 후 예약 발행" 버튼 + 예약 큐 패널(회수 가능). 실제 발행 cron 트리거는 미구현
+- StatsPanel 아래 CategoryStatsPanel(접이식): 발행 글의 카테고리·클러스터별 분포 집계, 2편 이하 클러스터는 빨간색으로 표시(얇은 콘텐츠 감사용)
+- Level 2 (LEVEL2_ENABLED=true일 때만): 정보형(article_type=info)·검증 통과 글에 "48시간 후 예약 발행" 버튼 + 예약 큐 패널(회수 가능). 실제 발행 트리거는 오라클의 `publish-scheduled.timer`(15분 주기)가 처리
 - "초안 생성" 탭: content-api(localhost:8000) 호출 → 생성 상태 폴링
 - 검수 절차 상세: `docs/검수-체크리스트.md` 참조
 
@@ -128,3 +146,4 @@ NEXT_PUBLIC_LEVEL2_ENABLED=      # "true"일 때만 Level 2 예약 발행 UI 활
 - AdSense slot ID는 컴포넌트에 하드코딩 허용
 - 검수 없는 발행 금지 — status=published는 반드시 사람이 Admin에서 직접 변경
 - Admin은 로컬 전용 — `src/middleware.ts`가 프로덕션에서 /admin 전체 차단
+- MongoDB Atlas 네트워크 액세스 목록에 오라클 VM 고정(또는 예약) 공인 IP 등록 필수 — IP 미등록 시 프로덕션에서 DB 연결 실패

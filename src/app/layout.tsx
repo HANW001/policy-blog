@@ -1,7 +1,15 @@
 import type { Metadata } from "next"
+import localFont from "next/font/local"
 import "./globals.css"
 import Link from "next/link"
 import Script from "next/script"
+
+const pretendard = localFont({
+  src: "../../node_modules/pretendard/dist/web/variable/woff2/PretendardVariable.woff2",
+  variable: "--font-pretendard",
+  display: "swap",
+  weight: "45 920",
+})
 
 export const metadata: Metadata = {
   title: {
@@ -43,7 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const adsenseId = process.env.NEXT_PUBLIC_ADSENSE_ID
 
   return (
-    <html lang="ko">
+    <html lang="ko" className={pretendard.variable}>
       <head>
         <script
           type="application/ld+json"
