@@ -8,12 +8,15 @@ export const revalidate = 3600
 const VALID_CATEGORIES = ["소득_지원", "청년_주거", "세금_행정", "복지"]
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  const { slug } = await params
+  const { slug: rawSlug } = await params
+  const slug = decodeURIComponent(rawSlug)
   const label = CATEGORY_LABELS[slug]
   if (!label) return {}
+  const articles = await getArticles({ category: slug, limit: 1 })
   return {
     title: label,
     description: `${label} 관련 정부 제도·지원금 정보`,
+    ...(articles.length === 0 && { robots: { index: false, follow: true } }),
   }
 }
 
@@ -22,7 +25,8 @@ export async function generateStaticParams() {
 }
 
 export default async function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
+  const { slug: rawSlug } = await params
+  const slug = decodeURIComponent(rawSlug)
   if (!VALID_CATEGORIES.includes(slug)) notFound()
   const articles = await getArticles({ category: slug, limit: 50 })
   const label = CATEGORY_LABELS[slug]

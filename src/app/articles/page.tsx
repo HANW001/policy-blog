@@ -1,11 +1,29 @@
+import type { Metadata } from "next"
 import { getArticles, searchArticles } from "@/lib/articles"
 import ArticleCard from "@/components/ArticleCard"
 
 export const revalidate = 3600
 
-export const metadata = {
-  title: "전체 글",
-  description: "정부 제도·지원금·행정 정보 전체 글 목록",
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}): Promise<Metadata> {
+  const { q } = await searchParams
+  if (q) {
+    const results = await searchArticles(q)
+    if (results.length === 0) {
+      return {
+        title: "전체 글",
+        description: "정부 제도·지원금·행정 정보 전체 글 목록",
+        robots: { index: false, follow: true },
+      }
+    }
+  }
+  return {
+    title: "전체 글",
+    description: "정부 제도·지원금·행정 정보 전체 글 목록",
+  }
 }
 
 export default async function ArticlesPage({

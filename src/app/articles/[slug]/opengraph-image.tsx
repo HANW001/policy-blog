@@ -5,7 +5,8 @@ export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
 export default async function OgImage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
+  const { slug: rawSlug } = await params
+  const slug = decodeURIComponent(rawSlug)
   const article = await getArticleBySlug(slug)
   const title = article?.title ?? "정책정보"
   const category = article ? CATEGORY_LABELS[article.category] : ""

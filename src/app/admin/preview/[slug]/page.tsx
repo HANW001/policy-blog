@@ -16,6 +16,12 @@ const STATUS_COLORS: Record<string, string> = {
   published: "bg-green-100 text-green-800",
 }
 
+// 공개 페이지와 동일하게 본문 맨 앞의 중복 H1(글 제목과 동일)을 잘라내서
+// 실제 발행됐을 때와 같은 모습으로 미리보기가 보이게 한다.
+function stripLeadingH1(content: string): string {
+  return content.replace(/^\s*#\s+.+(\r?\n)+/, "")
+}
+
 export default async function AdminPreviewPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug: rawSlug } = await params
   const slug = decodeURIComponent(rawSlug)
@@ -48,7 +54,7 @@ export default async function AdminPreviewPage({ params }: { params: Promise<{ s
         <KeyFacts facts={article.key_facts ?? {}} />
 
         <div className="prose prose-sm max-w-none mt-6 text-gray-800">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{article.content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]}>{stripLeadingH1(article.content)}</ReactMarkdown>
         </div>
 
         <FaqSection items={article.faq_items ?? []} />
