@@ -1,0 +1,12 @@
+# 15분마다 publish-scheduled.service를 실행 — "48시간 후"처럼 시각 단위 예약이라
+# 초 단위 정밀도가 필요 없으므로 15분 주기면 충분하다.
+
+[Unit]
+Description=15분마다 policy-blog 예약 발행 확인
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,27 @@
+# systemd 유닛 — 예약 발행(scheduled_publish_at) 트리거 (1회성 실행, 타이머가 주기 호출)
+#
+# 설치:
+#   sudo cp policy-blog/deploy/publish-scheduled.service /etc/systemd/system/publish-scheduled.service
+#   sudo cp policy-blog/deploy/publish-scheduled.timer /etc/systemd/system/publish-scheduled.timer
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now publish-scheduled.timer
+#
+# 수동 실행(검증용):
+#   sudo systemctl start publish-scheduled.service
+#   journalctl -u publish-scheduled.service -n 20
+#
+# 주의: WorkingDirectory는 policy-blog.service와 동일하게 실제 경로에 맞춰야 한다
+# (.env.local과 node_modules를 여기 기준 상대경로로 찾음).
+
+[Unit]
+Description=policy-blog 예약 발행 트리거 (1회 실행)
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/pj-blog/policy-blog
+ExecStart=/usr/bin/node scripts/publish-scheduled.js
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=publish-scheduled
