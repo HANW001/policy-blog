@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { revalidatePath } from "next/cache"
 import { getDb } from "@/lib/mongodb"
 
 function checkAuth(req: NextRequest): boolean {
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
         slug: 1,
         title: 1,
         category: 1,
+        cluster: 1,
         status: 1,
         published_at: 1,
         updated_at: 1,
@@ -77,12 +79,13 @@ export async function PATCH(req: NextRequest) {
   const db = await getDb()
   const collection = db.collection("policy_articles")
 
+  const existing = await collection.findOne(
+    { slug },
+    { projection: { validation: 1, category: 1 } }
+  )
+
   // 기계 검증 실패(validation.passed === false) 글은 발행 차단 — 서버 사이드 가드
   if (status === "published") {
-    const existing = await collection.findOne(
-      { slug },
-      { projection: { validation: 1 } }
-    )
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
@@ -117,6 +120,16 @@ export async function PATCH(req: NextRequest) {
 
   if (result.matchedCount === 0) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
+
+  // status 변경(발행/비공개 전환)은 ISR 캐시된 페이지를 즉시 무효화해야 한다.
+  // content-api가 직접 Mongo에 published→review 등을 쓰는 경로는 이 라우트를 거치지 않으므로 커버 못 함(별도 후속 과제).
+  if (status !== undefined) {
+    revalidatePath(`/articles/${slug}`)
+    revalidatePath("/sitemap.xml")
+    revalidatePath("/articles")
+    revalidatePath("/")
+    if (existing?.category) revalidatePath(`/category/${existing.category}`)
   }
 
   return NextResponse.json({ ok: true, slug, status, review_action, scheduled_publish_at })

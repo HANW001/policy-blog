@@ -1,6 +1,8 @@
 import { MetadataRoute } from "next"
 import { getAllPublishedSlugs } from "@/lib/articles"
 
+export const revalidate = 3600
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://example.com"
   const slugs = await getAllPublishedSlugs()
@@ -17,6 +19,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${siteUrl}/category/소득_지원`, changeFrequency: "weekly", priority: 0.7 },
     { url: `${siteUrl}/category/청년_주거`, changeFrequency: "weekly", priority: 0.7 },
     { url: `${siteUrl}/category/세금_행정`, changeFrequency: "weekly", priority: 0.7 },
+    { url: `${siteUrl}/category/복지`, changeFrequency: "weekly", priority: 0.7 },
     { url: `${siteUrl}/about`, changeFrequency: "yearly", priority: 0.4 },
     { url: `${siteUrl}/contact`, changeFrequency: "yearly", priority: 0.3 },
   ]

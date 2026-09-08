@@ -45,6 +45,7 @@ interface Article {
   slug: string
   title: string
   category: string
+  cluster?: string
   status: string
   summary: string
   updated_at: string
@@ -141,6 +142,74 @@ function StatsPanel({ secret }: { secret: string }) {
         Level 2 전환 조건: 애드센스 승인 완료 AND 반려율 10% 미만
         {stats.level2Eligible ? " — 반려율 조건 충족" : ""}
       </span>
+    </div>
+  )
+}
+
+// ── 카테고리·클러스터 분포 패널 (얇은 콘텐츠 감사용) ──────────────
+const CATEGORY_LABELS: Record<string, string> = {
+  소득_지원: "소득·지원",
+  청년_주거: "청년·주거",
+  세금_행정: "세금·행정",
+  복지: "복지",
+}
+
+function CategoryStatsPanel({ secret }: { secret: string }) {
+  const [articles, setArticles] = useState<Article[] | null>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    fetch("/api/admin/drafts?status=published", { headers: { "x-admin-secret": secret } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setArticles)
+      .catch(() => {})
+  }, [secret])
+
+  if (!articles) return null
+
+  const byCategory: Record<string, number> = {}
+  const byCluster: Record<string, number> = {}
+  for (const a of articles) {
+    byCategory[a.category] = (byCategory[a.category] ?? 0) + 1
+    const clusterKey = `${a.category} / ${a.cluster ?? "(미지정)"}`
+    byCluster[clusterKey] = (byCluster[clusterKey] ?? 0) + 1
+  }
+  const thinClusters = Object.entries(byCluster).filter(([, count]) => count <= 2)
+
+  return (
+    <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
+      <button onClick={() => setOpen((v) => !v)} className="font-medium text-gray-700">
+        카테고리·클러스터 분포 (발행 {articles.length}편) {open ? "▲" : "▼"}
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(byCategory).map(([cat, count]) => (
+              <span key={cat} className="text-xs bg-white border border-gray-200 rounded px-2 py-1">
+                {CATEGORY_LABELS[cat] ?? cat}: {count}편
+              </span>
+            ))}
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 mb-1">클러스터별 (2편 이하 = 얇음 후보)</p>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(byCluster).sort((a, b) => a[1] - b[1]).map(([key, count]) => (
+                <span
+                  key={key}
+                  className={`text-xs border rounded px-2 py-1 ${count <= 2 ? "bg-red-50 border-red-200 text-red-700" : "bg-white border-gray-200"}`}
+                >
+                  {key}: {count}편
+                </span>
+              ))}
+            </div>
+            {thinClusters.length > 0 && (
+              <p className="text-xs text-red-600 mt-2">
+                얇은 클러스터 {thinClusters.length}개 — 증량 또는 noindex 검토 필요
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -288,6 +357,7 @@ function ReviewTab({ secret }: { secret: string }) {
   return (
     <div>
       <StatsPanel secret={secret} />
+      <CategoryStatsPanel secret={secret} />
 
       {LEVEL2_ENABLED && (
         <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50 p-4">
@@ -430,7 +500,7 @@ function ReviewTab({ secret }: { secret: string }) {
                       </button>
                       {expandedReport.has(a.slug) && (
                         <div className="mt-2 prose prose-sm max-w-none bg-gray-50 border border-gray-200 rounded p-3 text-gray-700">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{a.review_report}</ReactMarkdown>
+                          <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]}>{a.review_report}</ReactMarkdown>
                         </div>
                       )}
                     </div>
