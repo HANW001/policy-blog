@@ -5,11 +5,12 @@ import Link from "next/link"
 export const revalidate = 3600
 
 export default async function HomePage() {
-  const [latest, 소득, 청년, 세금] = await Promise.all([
+  const [latest, 소득, 청년, 세금, 복지] = await Promise.all([
     getArticles({ limit: 6 }),
     getArticles({ category: "소득_지원", limit: 3 }),
     getArticles({ category: "청년_주거", limit: 3 }),
     getArticles({ category: "세금_행정", limit: 3 }),
+    getArticles({ category: "복지", limit: 3 }),
   ])
 
   return (
@@ -35,6 +36,7 @@ export default async function HomePage() {
         { label: "소득·지원", items: 소득, cat: "소득_지원" },
         { label: "청년·주거", items: 청년, cat: "청년_주거" },
         { label: "세금·행정", items: 세금, cat: "세금_행정" },
+        { label: "복지", items: 복지, cat: "복지" },
       ].map(({ label, items, cat }) =>
         items.length > 0 ? (
           <section key={cat} className="mb-10">

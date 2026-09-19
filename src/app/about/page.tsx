@@ -27,11 +27,12 @@ export default function AboutPage() {
       <div className="prose prose-sm text-gray-700 space-y-4">
         <p>
           <strong>정책정보</strong>는 정부 제도·지원금·행정 정보를 공식 출처 기반으로 정확하게 안내하는 사이트입니다.
+          글 초안은 AI(Claude)가 공식 출처를 조사해 작성하고, 발행 전 반드시 사람이 검수합니다.
         </p>
         <h2 className="text-lg font-semibold mt-6">정보 검증 과정</h2>
         <ul className="list-disc list-inside space-y-2">
-          <li>공공데이터포털(data.go.kr), 복지로(bokjiro.go.kr) 공식 API에서 원천 데이터를 수집합니다.</li>
-          <li>수집된 데이터를 스키마로 정규화한 뒤, 검수자가 공식 출처와 1:1 대조합니다.</li>
+          <li>글 초안은 AI(Claude)가 국세청·고용노동부·보건복지부 등 각 제도의 공식 페이지를 검색해 작성합니다.</li>
+          <li>초안에 담긴 지원 금액·신청 조건 등 수치는 해당 공식 페이지와 대조해 확인합니다.</li>
           <li>모든 글은 발행 전 사람이 직접 검수한 후에만 게시됩니다 — 자동 발행은 하지 않습니다.</li>
           <li>제도 변경이 감지되면 해당 글을 즉시 갱신합니다.</li>
           <li>각 글에는 공식 출처 링크가 반드시 포함됩니다.</li>

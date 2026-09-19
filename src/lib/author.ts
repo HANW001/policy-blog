@@ -1,7 +1,7 @@
 // 저자 정보 단일 관리 지점.
 export const AUTHOR = {
   name: "정책노트 김대리",
-  description: "10년차 중소기업 직장인이 정부 지원제도를 실무 기준으로 정리합니다.",
+  description: "AI(Claude)가 공식 출처를 조사해 초안을 작성하고, 사람이 검수해 정리합니다.",
 }
 
 // 감수자 정보. Level 1 검수(admin 승인)를 수행하는 사람을 가리키며,

@@ -54,9 +54,9 @@ src/app/
   disclaimer/page.tsx             → 면책고지
   admin/page.tsx                  → 초안 검수·발행 Admin UI (Client Component)
   admin/preview/[slug]/page.tsx   → Admin 미리보기 (Server Component, 발행 전 글 포함)
-  api/admin/drafts/route.ts       → GET 목록(cluster 포함 projection) / PATCH 상태변경·승인/반려·예약발행 (검증 실패 글 발행은 서버에서 400 차단)
+  api/admin/drafts/route.ts       → GET 목록(cluster 포함 projection) / PATCH 상태변경·승인/반려·예약발행 (검증 실패 글 발행은 서버에서 400 차단). status 변경 시 `revalidatePath`로 글 상세·사이트맵·목록·카테고리·홈을 즉시 재검증 — 단, 이 재검증은 **요청을 처리한 Next 프로세스에만 적용**되므로 로컬 admin(로컬 전용 사용)에서 상태를 바꿔도 오라클 프로덕션의 ISR 캐시는 무효화되지 않는다(사이트맵은 `revalidate: 3600`으로 최대 1시간 내 자연 회복, 개별 글 상세는 `revalidate: 86400`이라 published→review로 내린 경우 최대 24시간 stale 노출 가능 — 알려진 갭, 미해결)
   api/admin/stats/route.ts        → GET 반려율 집계 (reviewedCount, rejectedCount, rejectionRate, level2Eligible)
-  sitemap.ts                      → 동적 사이트맵 (published 글 전체)
+  sitemap.ts                      → 동적 사이트맵 (published 글 전체, `revalidate: 3600`)
   robots.ts                       → robots.txt (AI 크롤러 GPTBot·ClaudeBot 등 명시적 허용)
   llms.txt/route.ts               → GEO용 llms.txt 매니페스트 (llmstxt.org 관례, AI 크롤러가 사이트 구조 파악용)
 src/middleware.ts                 → /admin, /api/admin/* 프로덕션 차단 (NODE_ENV=production → 404)
